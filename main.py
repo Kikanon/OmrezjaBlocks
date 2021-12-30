@@ -1,7 +1,7 @@
 from array import ArrayType, array
 from tkinter import *
 import hashlib
-import json
+import pickle
 from typing import List
 import websockets
 import threading
@@ -95,12 +95,12 @@ class App(Tk):
 
     async def emit(self, msg):
         for socket in self.send_sockets:
-            await socket.send(json.dumps(msg))
+            await socket.send(pickle.dumps(msg))
 
     async def getUpdates(self, websocket):
         print("got connection")
         async for message in websocket:
-            new_chain = json.loads(message)
+            new_chain = pickle.loads(message)
             self.logText(f"recived chain with length of {len(new_chain)}")
 
     async def reciver(self, port):
@@ -201,7 +201,6 @@ class App(Tk):
         for x in chain:
             diff += pow(2, x.diff)
         return diff
-
 
 if __name__ == "__main__" :
     app = App()
