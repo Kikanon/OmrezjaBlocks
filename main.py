@@ -35,7 +35,7 @@ class Block:
         """
         
     def toStringNN(self):
-        return f"""Index: {self.index}, Data: {self.data}, Timestamp: {str(self.timestamp)}, hash: {str(self.hash)}, prevHash: {str(self.prev_hash)}, diff: {self.diff}, nonce: {self.nonce}"""
+        return f"""Index: {self.index}, hash: {str(self.hash)}, prevHash: {str(self.prev_hash)}, diff: {self.diff}, nonce: {self.nonce}"""
 
 class App(Tk):           
 
@@ -43,7 +43,8 @@ class App(Tk):
     send_sockets = []
     diff : int = 2
     dif_adjust_interval : int = 2
-    block_gen_interval : int = 2 # sekunde
+    block_gen_interval : float = 1.5 # sekunde
+    mine_block_count : int = 100
 
     def __init__(self):
         super().__init__()
@@ -81,13 +82,7 @@ class App(Tk):
 
     def mineBlock(self, newBlock : Block):
         while(1):
-            newBlock.hash = hashlib.sha256(
-                str(newBlock.index).encode() 
-            + str(newBlock.timestamp).encode()
-            + str(newBlock.data).encode() 
-            + str(newBlock.prev_hash).encode() 
-            + str(newBlock.diff).encode() 
-            + str(newBlock.nonce).encode()).hexdigest()
+            newBlock.hash = self.hash(newBlock)
             if(str(newBlock.hash).startswith(newBlock.diff * '0')):
                 return newBlock
             else:
@@ -95,13 +90,27 @@ class App(Tk):
 
     async def emit(self, msg):
         for socket in self.send_sockets:
-            await socket.send(pickle.dumps(msg))
+            try:
+                await socket.send(pickle.dumps(msg))
+            except Exception as e:
+                print("probs closed smthing")
 
     async def getUpdates(self, websocket):
         print("got connection")
-        async for message in websocket:
-            new_chain = pickle.loads(message)
-            self.logText(f"recived chain with length of {len(new_chain)}")
+        try:
+            async for message in websocket:
+                new_chain = pickle.loads(message)
+                print("recived chain")
+                if self.validate_chain(new_chain):
+                    print(f"chain valid, diffs are new {self.calculate_chain_diff(new_chain)}, and current {self.calculate_chain_diff(self.chain)}")
+                    if (self.calculate_chain_diff(new_chain) > self.calculate_chain_diff(self.chain)):
+                        self.logText("updated to new chain")
+                        self.printChain(new_chain)
+                        self.chain = new_chain
+                        self.diff = new_chain[-1].diff
+                        self.logText(f"new diff is now {self.diff}")
+        except Exception as e:
+            print(f"stopped recieving data from one app because {e}")
 
     async def reciver(self, port):
         try:
@@ -140,13 +149,13 @@ class App(Tk):
             self.logText("failed to connect")
 
     def startMining(self):
-        block = Block(0,"Block data things", time.time(), "0", self.diff)
-        block = self.mineBlock(block)
-        if(self.can_add_block(block)):
-            self.chain.append(block)
-            self.logText(block.toStringNN())
-        for x in range(1,100):
-            block = Block(x,"Block data things", time.time(), self.chain[-1].hash, self.diff)
+        for x in range(1,self.mine_block_count):
+            print(f"mining block {x}")
+            if len(self.chain)==0:
+                prev_hash : str = "0"
+            else :
+                prev_hash : str = self.chain[-1].hash
+            block = Block(len(self.chain),"Block data things", time.time(), prev_hash, self.diff)
             block = self.mineBlock(block)
             if(self.can_add_block(block)):
                 self.chain.append(block)
@@ -157,7 +166,7 @@ class App(Tk):
 
     def startUpdates(self):
         while 1:
-            time.sleep(15)
+            time.sleep(5)
             asyncio.run(self.emit(self.chain))
 
     def start_mining_thread(self):
@@ -201,6 +210,48 @@ class App(Tk):
         for x in chain:
             diff += pow(2, x.diff)
         return diff
+
+    def printChain(self, chain):
+        for x in chain:
+            self.logText(x.toStringNN())
+
+    def validate_chain(self, chain : List):
+        # index
+        # hash
+        # prev Hash
+        # blok je ustrezen, če je njegova časovna značka največ 1 minuto večja od našega trenutnega časa
+        # blok v verigi je ustrezen če je njegova časovna značka največ 1 minuto manjša od časovne značke prejšnjega bloka
+        for x in range(1,len(chain)):
+            if(chain[x].index != (chain[x-1].index + 1)):
+                print("invalid index")
+                return False
+
+            if(chain[x].hash != self.hash(chain[x])):
+                print("invalid hash")
+                return False
+
+            if(chain[x].prev_hash != chain[x-1].hash):
+                print("invalid prevhash")
+                return False
+
+            if((chain[x].timestamp - time.time() ) > 60 ):
+                print("invalid timestamp1")
+                return False
+
+            if((chain[x-1].timestamp - chain[x].timestamp) > 60):
+                print("invalid timestamp2")
+                return False
+
+        return True
+
+    def hash(self, block : Block):
+        return hashlib.sha256(
+                str(block.index).encode() 
+            + str(block.timestamp).encode()
+            + str(block.data).encode() 
+            + str(block.prev_hash).encode() 
+            + str(block.diff).encode() 
+            + str(block.nonce).encode()).hexdigest()
 
 if __name__ == "__main__" :
     app = App()
