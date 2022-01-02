@@ -81,8 +81,12 @@ class App(Tk):
         self.log.see(END)
 
     def mineBlock(self, newBlock : Block):
+        count : int = 0
         while(1):
             newBlock.hash = self.hash(newBlock)
+            count += 1
+            if(count%10000==0):
+                print(f"{count} hash is {newBlock.hash}")
             if(str(newBlock.hash).startswith(newBlock.diff * '0')):
                 return newBlock
             else:
@@ -92,8 +96,9 @@ class App(Tk):
         for socket in self.send_sockets:
             try:
                 await socket.send(pickle.dumps(msg))
-            except Exception as e:
-                print("probs closed smthing")
+            except websockets.exceptions.ConnectionClosedError as e:
+                print(f"probs closed smthing")
+                self.send_sockets.remove(socket)
 
     async def getUpdates(self, websocket):
         print("got connection")
